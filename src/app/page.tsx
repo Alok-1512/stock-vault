@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useMounted, useLocalStorage } from '@/hooks';
 import type { Trade, CurrentPrices, FilterState } from '@/lib/types';
-import { addTrade, getTrades, saveTrades, getCurrentPrices, updateCurrentPrice } from '@/lib/storage';
+import { addTrade, getTrades, saveTrades, getCurrentPrices, updateCurrentPrice, saveCurrentPrices } from '@/lib/storage';
 import {
   getOpenPositions,
   getClosedTrades,
@@ -23,6 +23,7 @@ import {
   exportTaxSummary,
 } from '@/lib/csv-export';
 
+import { generateSampleTrades, generateSampleCurrentPrices } from '@/lib/sample-data';
 import { TradeForm } from '@/components/trade-form';
 import { PortfolioOverview } from '@/components/portfolio-overview';
 import { OpenPositions } from '@/components/open-positions';
@@ -50,6 +51,8 @@ import {
   TrendingUp,
   Menu,
   X,
+  Database,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -116,6 +119,22 @@ export default function Dashboard() {
     },
     []
   );
+
+  const handleLoadSampleData = useCallback(() => {
+    const sampleTrades = generateSampleTrades();
+    const samplePrices = generateSampleCurrentPrices();
+    saveTrades(sampleTrades);
+    saveCurrentPrices(samplePrices);
+    setTrades(sampleTrades);
+    setCurrentPrices(samplePrices);
+  }, []);
+
+  const handleClearAllData = useCallback(() => {
+    saveTrades([]);
+    saveCurrentPrices({});
+    setTrades([]);
+    setCurrentPrices({});
+  }, []);
 
   // Compute derived data
   const filteredTrades = useMemo(
@@ -252,6 +271,28 @@ export default function Dashboard() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {/* Sample data buttons */}
+              {trades.length === 0 ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-400/10"
+                  onClick={handleLoadSampleData}
+                >
+                  <Database className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Load Samples</span>
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-400/10"
+                  onClick={handleClearAllData}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Clear</span>
+                </Button>
+              )}
               {/* CSV Export dropdown */}
               <div className="relative group">
                 <Button
