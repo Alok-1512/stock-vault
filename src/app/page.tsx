@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useMounted, useLocalStorage } from '@/hooks';
 import type { Trade, CurrentPrices, FilterState } from '@/lib/types';
 import { addTrade, getTrades, saveTrades, getCurrentPrices, updateCurrentPrice, saveCurrentPrices } from '@/lib/storage';
@@ -24,6 +24,7 @@ import {
 } from '@/lib/csv-export';
 
 import { generateSampleTrades, generateSampleCurrentPrices } from '@/lib/sample-data';
+import { fetchLivePrices, setLastPriceUpdate, getLastPriceUpdate } from '@/lib/price-fetcher';
 import { TradeForm } from '@/components/trade-form';
 import { PortfolioOverview } from '@/components/portfolio-overview';
 import { OpenPositions } from '@/components/open-positions';
@@ -94,6 +95,9 @@ export default function Dashboard() {
     stock: '',
   });
   const [initialized, setInitialized] = useState(false);
+  const [pricesFetching, setPricesFetching] = useState(false);
+  const [lastPriceUpdateTime, setLastPriceUpdateTime] = useState<string | null>(null);
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load from localStorage on mount
   if (mounted && !initialized) {
@@ -101,6 +105,7 @@ export default function Dashboard() {
     const storedPrices = getCurrentPrices();
     setTrades(storedTrades);
     setCurrentPrices(storedPrices);
+    setLastPriceUpdateTime(getLastPriceUpdate());
     setInitialized(true);
   }
 
@@ -135,6 +140,77 @@ export default function Dashboard() {
     setTrades([]);
     setCurrentPrices({});
   }, []);
+
+  // --- Dynamic price fetching ---
+  const handleRefreshPrices = useCallback(async () => {
+    const currentTrades = getTrades();
+    const tickerSet = new Set<string>();
+    for (const t of currentTrades) {
+      if (t.tradeType === 'buy') tickerSet.add(t.ticker);
+    }
+    // Only fetch for tickers with open positions
+    const openTickers = Array.from(tickerSet);
+    if (openTickers.length === 0) return;
+
+    setPricesFetching(true);
+    try {
+      const result = await fetchLivePrices(openTickers);
+      if (Object.keys(result.prices).length > 0) {
+        const existingPrices = getCurrentPrices();
+        const merged = { ...existingPrices, ...result.prices };
+        saveCurrentPrices(merged);
+        setCurrentPrices(merged);
+        setLastPriceUpdate(result.fetchedAt);
+        setLastPriceUpdateTime(result.fetchedAt);
+      }
+    } catch (err) {
+      console.error('Price fetch error:', err);
+    } finally {
+      setPricesFetching(false);
+    }
+  }, []);
+
+  // Auto-refresh prices every 5 minutes when tab is visible
+  useEffect(() => {
+    if (!initialized) return;
+
+    const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+    function startInterval() {
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
+      refreshIntervalRef.current = setInterval(() => {
+        handleRefreshPrices();
+      }, INTERVAL_MS);
+    }
+
+    function stopInterval() {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        // Refresh immediately when tab becomes visible again
+        handleRefreshPrices();
+        startInterval();
+      } else {
+        stopInterval();
+      }
+    }
+
+    // Initial fetch on load
+    handleRefreshPrices();
+    startInterval();
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      stopInterval();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [initialized, handleRefreshPrices]);
 
   // Compute derived data
   const filteredTrades = useMemo(
@@ -361,6 +437,9 @@ export default function Dashboard() {
               <OpenPositions
                 positions={openPositions}
                 onUpdatePrice={handleUpdatePrice}
+                onRefreshPrices={handleRefreshPrices}
+                pricesFetching={pricesFetching}
+                lastPriceUpdate={lastPriceUpdateTime}
               />
               <PortfolioAllocation positions={openPositions} />
             </div>
