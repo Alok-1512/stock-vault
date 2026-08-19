@@ -65,6 +65,4 @@ All data is stored in browser localStorage — no backend, no accounts, no setup
 
 Tax estimates are indicative only. Actual tax may vary based on your income slab, surcharge, cess, and other factors. Please consult a Chartered Accountant for accurate tax calculations.
 
----
 
-🦝 Co-created with [Raccoon AI](https://raccoonai.tech)
